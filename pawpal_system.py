@@ -46,10 +46,6 @@ Plan
     human-readable explanation.  get_time_slots() returns (task, start, end)
     tuples laid out sequentially with buffer gaps.
 
-StreamlitUI
-    Thin glue layer that holds the current Owner, Pet, and Plan in one place
-    and delegates scheduling to Scheduler.  Used by app.py.
-
 Quick-start example
 -------------------
     from pawpal_system import Owner, Pet, Task, Scheduler
@@ -370,20 +366,3 @@ class Scheduler:
                 lines.append(f"  • {task.title} (for {task.species}s)")
         return "\n".join(lines)
 
-
-class StreamlitUI:
-    """Thin wrapper that connects the system classes to the Streamlit frontend."""
-
-    def __init__(self):
-        """Initialize with no owner, pet, or plan set."""
-        self.owner: Optional[Owner] = None
-        self.pet: Optional[Pet] = None
-        self.plan: Optional[Plan] = None
-
-    def build_and_run_scheduler(self) -> Optional[Plan]:
-        """Create a Scheduler from current state, store and return the generated Plan."""
-        if self.owner is None or self.pet is None:
-            return None
-        scheduler = Scheduler(owner=self.owner, pet=self.pet)
-        self.plan = scheduler.generate_plan()
-        return self.plan

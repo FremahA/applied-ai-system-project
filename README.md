@@ -22,17 +22,22 @@ Your final app should:
 - Display the plan clearly (and ideally explain the reasoning)
 - Include tests for the most important scheduling behaviors
 
+## Features
+
+- **Sorting by duration** — tasks are kept sorted shortest-first after every add or completion, so the task list is always in a predictable order.
+- **Priority-based ordering** — selected optional tasks are placed into the plan from highest to lowest priority, with shortest duration breaking ties.
+- **0/1 Knapsack optimization** — the scheduler uses bottom-up dynamic programming to find the combination of optional tasks with the highest total priority value that fits within the available time.
+- **Required task guarantee** — tasks marked required are always included in the plan regardless of time pressure; optional tasks fill whatever capacity remains.
+- **Buffer time between tasks** — an owner-level buffer is inserted between consecutive tasks and counted against capacity during scheduling.
+- **Species filtering** — tasks can be restricted to a specific species; ineligible tasks are excluded before scheduling and reported separately in the plan explanation.
+- **Daily and weekly recurrence** — completing a recurring task automatically spawns the next occurrence anchored to the original due date to prevent schedule drift.
+- **Proportional multi-pet time allocation** — when an owner has multiple pets, available minutes are split proportionally by each pet's pending-task count.
+- **Sequential time-slot layout** — the plan produces start and end times for each task laid out from minute 0 with buffer gaps, used by both the UI and conflict detection.
+- **Cross-plan conflict detection** — checks all pairs of time slots across multiple pet plans for overlaps and returns human-readable warnings instead of crashing on bad input.
+
 ## Smarter Scheduling
 
-The scheduler goes beyond a simple greedy approach with several features added during implementation:
-
-- **0/1 Knapsack algorithm** — instead of greedily picking tasks by priority until time runs out, the scheduler uses dynamic programming to find the combination of optional tasks with the highest total priority value that fits within the available time.
-- **Required tasks** — tasks marked `required=True` are always included in the plan regardless of time pressure, with optional tasks filling whatever time remains.
-- **Buffer time** — an owner-level `buffer_minutes` value is inserted between consecutive tasks, giving the owner rest or travel time between activities.
-- **Species filtering** — tasks can be restricted to a specific species (`dog`, `cat`, or `other`); ineligible tasks are excluded before scheduling and reported separately in the explanation.
-- **Recurring tasks** — tasks with `recurrence="daily"` or `"weekly"` automatically spawn the next occurrence when marked complete, anchored to the original due date to prevent schedule drift.
-- **Multi-pet support** — when an owner has multiple pets, available time is allocated proportionally by pending-task count and each pet gets its own plan.
-- **Conflict detection** — `Scheduler.detect_conflicts(*plans)` checks all pairs of time slots across multiple pet plans and reports any overlaps.
+The scheduler goes beyond a simple greedy approach. Rather than picking tasks by priority until time runs out, it uses a 0/1 knapsack algorithm to find the highest-value combination of tasks that fits the available time. Required tasks are always guaranteed a spot, and whatever time remains is offered to optional tasks. When an owner has multiple pets, time is divided proportionally so no pet is shortchanged. The system also handles recurring tasks, species restrictions, buffer gaps between activities, and can detect scheduling conflicts across multiple pet plans.
 
 ## Getting started
 

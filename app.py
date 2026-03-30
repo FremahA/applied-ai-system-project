@@ -1,6 +1,44 @@
 import streamlit as st
 from pawpal_system import Owner, Pet, Task, Scheduler
 
+PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
+
+
+def _priority_badge(priority: str) -> str:
+    icons = {"high": "🔴", "medium": "🟡", "low": "🟢"}
+    return f"{icons.get(priority, '')} {priority}"
+
+
+def _render_plan(plan, allocated_minutes: int | None = None) -> None:
+    """Render a Plan's time slots and summary using Streamlit components."""
+    budget = allocated_minutes if allocated_minutes is not None else plan.owner.available_minutes
+
+    col_used, col_budget, col_tasks = st.columns(3)
+    col_used.metric("Minutes used", plan.total_minutes_used)
+    col_budget.metric("Budget", budget)
+    col_tasks.metric("Tasks scheduled", len(plan.selected_tasks))
+
+    slots = plan.get_time_slots()
+    if slots:
+        st.table([
+            {
+                "start (min)": start,
+                "end (min)": end,
+                "task": t.title,
+                "priority": _priority_badge(t.priority),
+                "duration (min)": t.duration_minutes,
+                "required": "✓" if t.required else "",
+            }
+            for t, start, end in slots
+        ])
+    else:
+        st.info("No tasks could be scheduled within the time budget.")
+
+    # Skipped / excluded tasks pulled from the explanation text are already
+    # in plan.explanation — show it collapsed so it's available but not loud.
+    with st.expander("Full explanation"):
+        st.text(plan.explanation)
+
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 
 st.title("🐾 PawPal+")
@@ -9,10 +47,7 @@ st.markdown(
     """
 Welcome to the PawPal+ starter app.
 
-This file is intentionally thin. It gives you a working Streamlit app so you can start quickly,
-but **it does not implement the project logic**. Your job is to design the system and build it.
 
-Use this app as your interactive demo once your backend classes/functions exist.
 """
 )
 
@@ -22,20 +57,10 @@ with st.expander("Scenario", expanded=True):
 **PawPal+** is a pet care planning assistant. It helps a pet owner plan care tasks
 for their pet(s) based on constraints like time, priority, and preferences.
 
-You will design and implement the scheduling logic and connect it to this Streamlit UI.
 """
     )
 
-with st.expander("What you need to build", expanded=True):
-    st.markdown(
-        """
-At minimum, your system should:
-- Represent pet care tasks (what needs to happen, how long it takes, priority)
-- Represent the pet and the owner (basic info and preferences)
-- Build a plan/schedule for a day that chooses and orders tasks based on constraints
-- Explain the plan (why each task was chosen and when it happens)
-"""
-    )
+
 
 st.divider()
 
@@ -135,15 +160,16 @@ else:
     for pet in pets:
         if pet.tasks:
             st.markdown(f"**{pet.name}** ({pet.species})")
+            sorted_tasks = sorted(pet.tasks, key=lambda t: (PRIORITY_ORDER[t.priority], t.duration_minutes))
             st.table([
                 {
                     "title": t.title,
-                    "duration_min": t.duration_minutes,
-                    "priority": t.priority,
-                    "required": t.required,
+                    "priority": _priority_badge(t.priority),
+                    "duration (min)": t.duration_minutes,
+                    "required": "✓" if t.required else "",
                     "status": t.status,
                 }
-                for t in pet.tasks
+                for t in sorted_tasks
             ])
 
 st.divider()
@@ -171,22 +197,33 @@ else:
             owner = st.session_state.owner
 
             if schedule_target == "All pets":
-                # Each pet gets a proportional share — owner.pets contains all pets
                 total_tasks = sum(len(p.tasks) for p in pets_with_tasks)
+                all_plans = []
                 for pet in pets_with_tasks:
                     scheduler = Scheduler(owner=owner, pet=pet)
                     plan = scheduler.generate_plan()
                     allocated = int(owner.available_minutes * len(pet.tasks) / total_tasks)
+                    all_plans.append(plan)
                     st.markdown(f"### {pet.name} ({pet.species})")
-                    st.success(f"{plan.total_minutes_used} min used out of {allocated} min allocated")
-                    st.text(plan.explanation)
-                    if plan.selected_tasks:
-                        st.table([
-                            {"title": t.title, "duration_min": t.duration_minutes, "priority": t.priority}
-                            for t in plan.selected_tasks
-                        ])
+                    _render_plan(plan, allocated_minutes=allocated)
+
+                # Surface any cross-pet time-slot conflicts
+                conflicts = Scheduler.detect_conflicts(*all_plans)
+                if conflicts:
+                    st.markdown("---")
+                    st.markdown("#### Scheduling conflicts detected")
+                    for msg in conflicts:
+                        # Strip leading "WARNING: " prefix for cleaner display
+                        clean = msg.removeprefix("WARNING: ")
+                        st.warning(
+                            f"**Overlap:** {clean}\n\n"
+                            "_Two pets have tasks scheduled at the same time. "
+                            "Consider staggering start times or reducing one task's duration._"
+                        )
+                else:
+                    st.success("No scheduling conflicts across pets.")
             else:
-                # Single pet selected — give it the full available_minutes
+                # Single pet — give it the full available_minutes
                 pet = next(p for p in pets_with_tasks if p.name == schedule_target)
                 single_pet_owner = Owner(
                     owner.name,
@@ -196,10 +233,5 @@ else:
                 )
                 scheduler = Scheduler(owner=single_pet_owner, pet=pet)
                 plan = scheduler.generate_plan()
-                st.success(f"Schedule for {pet.name} — {plan.total_minutes_used} min used.")
-                st.text(plan.explanation)
-                if plan.selected_tasks:
-                    st.table([
-                        {"title": t.title, "duration_min": t.duration_minutes, "priority": t.priority}
-                        for t in plan.selected_tasks
-                    ])
+                st.success(f"Schedule generated for **{pet.name}**.")
+                _render_plan(plan)
