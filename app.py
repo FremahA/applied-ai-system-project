@@ -39,6 +39,14 @@ At minimum, your system should:
 
 st.divider()
 
+# Priority display helpers
+_PRIORITY_BADGE = {"high": "🔴 High", "medium": "🟡 Medium", "low": "🟢 Low"}
+
+
+def _priority_badge(p: str) -> str:
+    return _PRIORITY_BADGE.get(p, p)
+
+
 # ---------------------------------------------------------------------------
 # Step 1 — Owner
 # ---------------------------------------------------------------------------
@@ -63,7 +71,10 @@ if st.button("Create owner"):
 
 if "owner" in st.session_state:
     o = st.session_state.owner
-    st.success(f"{o.name} — {o.available_minutes} min available, {o.buffer_minutes} min buffer")
+    st.success(f"Owner **{o.name}** created.")
+    m1, m2 = st.columns(2)
+    m1.metric("Available time", f"{o.available_minutes} min")
+    m2.metric("Buffer between tasks", f"{o.buffer_minutes} min")
 
 st.divider()
 
@@ -84,13 +95,17 @@ else:
     if st.button("Add pet"):
         new_pet = Pet(pet_name, species)
         st.session_state.owner.pets.append(new_pet)
+        st.success(f"Added **{pet_name}** ({species}).")
 
     if st.session_state.owner.pets:
-        st.write("Your pets:")
-        st.table([
-            {"name": p.name, "species": p.species, "tasks": len(p.tasks)}
-            for p in st.session_state.owner.pets
-        ])
+        st.dataframe(
+            [
+                {"Name": p.name, "Species": p.species, "Tasks": len(p.tasks)}
+                for p in st.session_state.owner.pets
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
     else:
         st.info("No pets yet. Add one above.")
 
@@ -131,20 +146,46 @@ else:
             required=required,
         )
         target_pet.add_task(task)
+        st.success(f"Added **{task_title}** to {target_pet.name}.")
 
     for pet in pets:
-        if pet.tasks:
-            st.markdown(f"**{pet.name}** ({pet.species})")
-            st.table([
-                {
-                    "title": t.title,
-                    "duration_min": t.duration_minutes,
-                    "priority": t.priority,
-                    "required": t.required,
-                    "status": t.status,
-                }
-                for t in pet.tasks
-            ])
+        if not pet.tasks:
+            continue
+
+        st.markdown(f"#### {pet.name} ({pet.species})")
+        pending = pet.filter_tasks("pending")
+        done = pet.filter_tasks("complete")
+
+        c1, c2 = st.columns(2)
+        c1.metric("Pending", len(pending))
+        c2.metric("Completed", len(done))
+
+        if pending:
+            st.caption("Pending tasks — sorted by duration (shortest first)")
+            st.dataframe(
+                [
+                    {
+                        "Title": t.title,
+                        "Duration (min)": t.duration_minutes,
+                        "Priority": _priority_badge(t.priority),
+                        "Required": "Yes" if t.required else "No",
+                    }
+                    for t in pending
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        if done:
+            with st.expander(f"View {len(done)} completed task(s)"):
+                st.dataframe(
+                    [
+                        {"Title": t.title, "Duration (min)": t.duration_minutes}
+                        for t in done
+                    ],
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
 st.divider()
 
@@ -171,22 +212,60 @@ else:
             owner = st.session_state.owner
 
             if schedule_target == "All pets":
-                # Each pet gets a proportional share — owner.pets contains all pets
                 total_tasks = sum(len(p.tasks) for p in pets_with_tasks)
+                all_plans = []
+
                 for pet in pets_with_tasks:
                     scheduler = Scheduler(owner=owner, pet=pet)
                     plan = scheduler.generate_plan()
+                    all_plans.append(plan)
                     allocated = int(owner.available_minutes * len(pet.tasks) / total_tasks)
-                    st.markdown(f"### {pet.name} ({pet.species})")
-                    st.success(f"{plan.total_minutes_used} min used out of {allocated} min allocated")
-                    st.text(plan.explanation)
+
+                    st.markdown(f"#### {pet.name} ({pet.species})")
+
+                    mu, ma = st.columns(2)
+                    mu.metric("Time used", f"{plan.total_minutes_used} min")
+                    ma.metric("Allocated", f"{allocated} min")
+
+                    st.info(plan.explanation)
+
                     if plan.selected_tasks:
-                        st.table([
-                            {"title": t.title, "duration_min": t.duration_minutes, "priority": t.priority}
-                            for t in plan.selected_tasks
-                        ])
+                        st.dataframe(
+                            [
+                                {
+                                    "Title": t.title,
+                                    "Start (min)": start,
+                                    "End (min)": end,
+                                    "Duration (min)": t.duration_minutes,
+                                    "Priority": _priority_badge(t.priority),
+                                    "Required": "Yes" if t.required else "No",
+                                }
+                                for t, start, end in plan.get_time_slots()
+                            ],
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+
+                st.divider()
+                conflicts = Scheduler.detect_conflicts(*all_plans)
+                if conflicts:
+                    st.error(f"{len(conflicts)} scheduling conflict(s) detected — tasks below overlap in time.")
+                    for c in conflicts:
+                        with st.container(border=True):
+                            col_a, col_mid, col_b = st.columns([5, 1, 5])
+                            with col_a:
+                                st.markdown(f"**{c.task_a.title}**")
+                                st.caption(f"{c.pet_a} · {_priority_badge(c.task_a.priority)} · {c.task_a.duration_minutes} min")
+                            with col_mid:
+                                st.markdown("<div style='text-align:center;padding-top:8px'>⚠️</div>", unsafe_allow_html=True)
+                            with col_b:
+                                st.markdown(f"**{c.task_b.title}**")
+                                st.caption(f"{c.pet_b} · {_priority_badge(c.task_b.priority)} · {c.task_b.duration_minutes} min")
+                            st.caption(f"Overlap: {c.overlap_minutes} min — consider shortening one task, reducing it to optional, or increasing available time.")
+                else:
+                    st.success("No time-slot conflicts across pets.")
+
             else:
-                # Single pet selected — give it the full available_minutes
                 pet = next(p for p in pets_with_tasks if p.name == schedule_target)
                 single_pet_owner = Owner(
                     owner.name,
@@ -196,10 +275,26 @@ else:
                 )
                 scheduler = Scheduler(owner=single_pet_owner, pet=pet)
                 plan = scheduler.generate_plan()
-                st.success(f"Schedule for {pet.name} — {plan.total_minutes_used} min used.")
-                st.text(plan.explanation)
+
+                mu, ma = st.columns(2)
+                mu.metric("Time used", f"{plan.total_minutes_used} min")
+                ma.metric("Available", f"{owner.available_minutes} min")
+
+                st.info(plan.explanation)
+
                 if plan.selected_tasks:
-                    st.table([
-                        {"title": t.title, "duration_min": t.duration_minutes, "priority": t.priority}
-                        for t in plan.selected_tasks
-                    ])
+                    st.dataframe(
+                        [
+                            {
+                                "Title": t.title,
+                                "Start (min)": start,
+                                "End (min)": end,
+                                "Duration (min)": t.duration_minutes,
+                                "Priority": _priority_badge(t.priority),
+                                "Required": "Yes" if t.required else "No",
+                            }
+                            for t, start, end in plan.get_time_slots()
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
