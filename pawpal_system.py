@@ -24,6 +24,13 @@ class Owner:
         if self.buffer_minutes < 0:
             raise ValueError(f"buffer_minutes must be non-negative, got {self.buffer_minutes}")
 
+    def get_tasks_by_pet(self, pet_name: str) -> list["Task"]:
+        """Return all tasks for the pet with the given name, or [] if not found."""
+        for pet in self.pets:
+            if pet.name == pet_name:
+                return pet.tasks
+        return []
+
 
 @dataclass
 class Pet:
@@ -40,6 +47,11 @@ class Pet:
     def add_task(self, task: "Task") -> None:
         """Add a task to this pet's task list."""
         self.tasks.append(task)
+        self.tasks.sort(key=lambda t: t.duration_minutes)
+
+    def filter_tasks(self, status: str) -> list["Task"]:
+        """Return tasks matching the given status ('pending' or 'complete')."""
+        return [t for t in self.tasks if t.status == status]
 
 
 @dataclass
