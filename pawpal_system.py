@@ -186,24 +186,6 @@ class Task:
 
 
 @dataclass
-class Conflict:
-    """A detected time-slot overlap between two tasks across plans."""
-    pet_a: str
-    task_a: "Task"
-    start_a: int
-    end_a: int
-    pet_b: str
-    task_b: "Task"
-    start_b: int
-    end_b: int
-
-    @property
-    def overlap_minutes(self) -> int:
-        """How many minutes the two slots actually overlap."""
-        return min(self.end_a, self.end_b) - max(self.start_a, self.start_b)
-
-
-@dataclass
 class Plan:
     """Represents the final daily schedule produced by the Scheduler."""
     owner: Owner
@@ -322,31 +304,45 @@ class Scheduler:
         return selected
 
     @staticmethod
-    def detect_conflicts(*plans: "Plan") -> list["Conflict"]:
+    def detect_conflicts(*plans: "Plan") -> list[str]:
         """Check all pairs of time slots across the given plans for overlaps.
 
-        Returns a list of Conflict objects (empty list = no conflicts).
-        Two tasks conflict when their intervals overlap; touching endpoints
-        are not a conflict (intervals are half-open [start, end)).
+        Lightweight strategy: every failure path returns a warning string instead
+        of raising. The caller always receives a plain list[str] — conflict messages
+        mixed with any WARNING lines — and the program never crashes.
+
+        Two tasks conflict when their intervals overlap: a task that ends exactly
+        when another begins is NOT a conflict (intervals are half-open [start, end)).
         """
+        if not plans:
+            return ["WARNING: no plans provided — nothing to check."]
+
+        # Build a flat list of (pet_name, task, start, end), skipping bad entries
         entries: list[tuple[str, Task, int, int]] = []
         for plan in plans:
             if plan is None:
+                entries  # skip silently — warning below
                 continue
-            pet_name = plan.pet.name if plan.pet is not None else "unknown pet"
-            for task, start, end in plan.get_time_slots():
-                entries.append((pet_name, task, start, end))
+            try:
+                pet_name = plan.pet.name if plan.pet is not None else "unknown pet"
+                for task, start, end in plan.get_time_slots():
+                    entries.append((pet_name, task, start, end))
+            except Exception as exc:  # noqa: BLE001
+                return [f"WARNING: could not read time slots — {exc}"]
 
-        conflicts: list[Conflict] = []
+        if not entries:
+            return ["WARNING: all plans were empty — no tasks to compare."]
+
+        conflicts: list[str] = []
         for i in range(len(entries)):
             for j in range(i + 1, len(entries)):
                 pet_a, task_a, start_a, end_a = entries[i]
                 pet_b, task_b, start_b, end_b = entries[j]
                 if start_a < end_b and start_b < end_a:
-                    conflicts.append(Conflict(
-                        pet_a=pet_a, task_a=task_a, start_a=start_a, end_a=end_a,
-                        pet_b=pet_b, task_b=task_b, start_b=start_b, end_b=end_b,
-                    ))
+                    conflicts.append(
+                        f"WARNING: [{start_a}–{end_a} min] '{task_a.title}' ({pet_a})"
+                        f" overlaps [{start_b}–{end_b} min] '{task_b.title}' ({pet_b})"
+                    )
         return conflicts
 
     def _build_explanation(
