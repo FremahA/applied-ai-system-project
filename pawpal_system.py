@@ -32,6 +32,10 @@ class Pet:
         if self.species not in VALID_SPECIES:
             raise ValueError(f"species must be one of {VALID_SPECIES}, got '{self.species}'")
 
+    def add_task(self, task: "Task") -> None:
+        """Add a task to this pet's task list."""
+        self.tasks.append(task)
+
 
 @dataclass
 class Task:
@@ -40,6 +44,7 @@ class Task:
     duration_minutes: int
     priority: str = "medium"  # "high", "medium", or "low"
     species: Optional[str] = None  # if set, task only applies to this species
+    status: str = "pending"  # "pending" or "complete"
 
     def __post_init__(self):
         if self.priority not in VALID_PRIORITIES:
@@ -48,6 +53,10 @@ class Task:
             raise ValueError(f"duration_minutes must be positive, got {self.duration_minutes}")
         if self.species is not None and self.species not in VALID_SPECIES:
             raise ValueError(f"species must be one of {VALID_SPECIES}, got '{self.species}'")
+
+    def mark_complete(self) -> None:
+        """Mark this task as complete."""
+        self.status = "complete"
 
     @property
     def priority_value(self) -> int:
