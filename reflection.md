@@ -40,8 +40,14 @@ I designed the system this way so that each component has a clear responsibility
 3. The Plan class gained owner and pet fields.  
    In the skeleton, Plan only stored selected_tasks, total_minutes_used, and explanation. The final implementation added owner and pet so that the plan is self-contained. It carries all the context needed to display or summarize the result without passing the owner and pet separately to the UI.
 
-4. Input validation was added to Owner, Pet, and Task.  
+4. Input validation was added to Owner, Pet, and Task.
    The initial skeletons were plain dataclasses with no validation. I added **post_init** methods to enforce that available_minutes and duration_minutes are positive, that priority is one of {"high", "medium", "low"}, and that species is one of {"dog", "cat", "other"}. This prevents silent bugs caused by bad input reaching the scheduler.
+
+5. A `start_offset` field was added to Plan to fix multi-pet scheduling conflicts.
+   Every pet's plan originally started its time slots at minute 0, which caused every multi-pet schedule to report false conflicts. Adding `start_offset` to `Plan` and advancing it after each pet's last task means each pet's schedule picks up where the previous one left off, so the conflict detector only fires on genuine overlaps.
+
+6. The UI grew significantly beyond the initial skeleton.
+   The original design had a minimal Streamlit interface. During implementation it expanded to include: duplicate task prevention (warns and blocks re-adding a pending task with the same name), remove pet and remove task controls, a dedicated "Mark tasks complete" section that resets on every new schedule generation, persistent schedule display stored in `st.session_state` so the schedule survives page interactions, and color-coded task tables using `tabulate` to generate priority-highlighted HTML rows.
 
 ---
 
@@ -88,11 +94,11 @@ When implementing conflict detection, the AI initially suggested raising an exce
 
 **How separate chat sessions for different phases helped:**
 
-I kept separate chat sessions for design, algorithm implementation, and debugging. Starting a new session for each phase meant I was not carrying stale context — when I switched from "how should I structure the classes?" to "why is the knapsack selecting the wrong tasks?", a fresh session gave answers grounded in the actual problem rather than assumptions left over from earlier conversation. It also forced me to re-articulate the problem in my own words each time, which often clarified my thinking before the AI even responded.
+I kept separate chat sessions for design, algorithm implementation, and debugging. Starting a new session for each phase meant I was not carrying stale context. When I switched from "how should I structure the classes?" to "why is the knapsack selecting the wrong tasks?", a fresh session gave answers grounded in the actual problem rather than assumptions left over from earlier conversation. It also forced me to re-articulate the problem in my own words each time, which often clarified my thinking before the AI even responded.
 
 **Being the "lead architect" when collaborating with AI:**
 
-The clearest lesson was that AI suggestions are proposals, not decisions. Copilot and the chat panel were fast and often correct, but they have no stake in the design — they will suggest a workable solution without knowing which tradeoffs matter to you. I had to stay in the lead by evaluating every suggestion against the constraints I had already set: no crashes in the UI, no greedy shortcuts where correctness mattered, no added complexity that the project did not need. The times I drifted into accepting suggestions passively were the times I had to go back and undo them. The best workflow was to decide what I wanted first, then use AI to help me build it — not to let AI decide and follow along.
+The clearest lesson was that AI suggestions are proposals, not decisions. Claude and the chat panel were fast and often correct, but they have no stake in the design. They will suggest a workable solution without knowing which tradeoffs matter to you. I had to stay in the lead by evaluating every suggestion against the constraints I had already set: no crashes in the UI, no greedy shortcuts where correctness mattered, no added complexity that the project did not need. The times I drifted into accepting suggestions passively were the times I had to go back and undo them. The best workflow was to decide what I wanted first, then use AI to help me build it, not to let AI decide and follow along.
 
 ---
 
@@ -132,7 +138,7 @@ I am also happy with how the `Plan` class became self-contained over time. Addin
 
 **b. What you would improve**
 
-If I had another iteration, I would redesign the multi-pet scheduling to produce a single unified timeline instead of staggering independently-generated plans. Right now each pet's plan is optimized in isolation and then offset in time.Tthat avoids false conflicts, but it does not actually find the best joint schedule. A shared timeline where the owner's time budget is one continuous sequence would allow the scheduler to interleave tasks across pets (e.g. feed the cat while the dog's walk is drying off), which is closer to how care actually works.
+If I had another iteration, I would redesign the multi-pet scheduling to produce a single truly joint timeline instead of staggering independently-optimized plans. The current fix avoids false conflicts by sequencing pets one after another, but each pet's plan is still optimized in isolation. A shared timeline where the owner's time budget is one continuous sequence would allow the scheduler to interleave tasks across pets (e.g. feed the cat while the dog cools down from a walk), which is closer to how care actually works.
 
 I would also add a way to set a specific start time for the day's schedule (e.g. "I have time starting at 8:00 AM") so the time slots display as real clock times rather than abstract minute offsets.
 

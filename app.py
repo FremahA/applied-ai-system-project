@@ -1,9 +1,30 @@
 import streamlit as st
+from tabulate import tabulate
 from pawpal_system import Owner, Pet, Task, Scheduler
 
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 
 _SPECIES_EMOJI = {"dog": "🐕", "cat": "🐱", "other": "🐾"}
+
+_PRIORITY_BG = {"high": "#ffe5e5", "medium": "#fff9e6", "low": "#eafaea"}
+
+
+def _colored_table(rows: list[dict], priority_key: str = "_priority") -> str:
+    """Use tabulate to build an HTML table, then inject per-row background colors by priority."""
+    priorities = [r.get(priority_key, "") for r in rows]
+    visible = [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows]
+    base_html = tabulate(visible, headers="keys", tablefmt="html")
+    lines = base_html.splitlines()
+    result, row_idx, in_tbody = [], 0, False
+    for line in lines:
+        if "<tbody>" in line:
+            in_tbody = True
+        if in_tbody and "<tr>" in line and row_idx < len(priorities):
+            bg = _PRIORITY_BG.get(priorities[row_idx], "#ffffff")
+            line = line.replace("<tr>", f"<tr style='background-color:{bg}'>", 1)
+            row_idx += 1
+        result.append(line)
+    return "\n".join(result)
 
 _TASK_KEYWORDS = [
     ({"walk", "stroll", "run", "jog"},          "🦮"),
@@ -45,7 +66,7 @@ def _render_plan(plan, allocated_minutes: int | None = None) -> None:
 
     slots = plan.get_time_slots()
     if slots:
-        st.table([
+        st.markdown(_colored_table([
             {
                 "": _task_emoji(t.title),
                 "task": t.title,
@@ -53,9 +74,10 @@ def _render_plan(plan, allocated_minutes: int | None = None) -> None:
                 "duration": f"{t.duration_minutes} min",
                 "priority": _priority_badge(t.priority),
                 "required": "🔒" if t.required else "",
+                "_priority": t.priority,
             }
             for t, start, end in slots
-        ])
+        ]), unsafe_allow_html=True)
     else:
         st.info("No tasks could be scheduled within the time budget.")
 
@@ -77,9 +99,6 @@ Tails are wagging and paws are ready — let's build the ultimate care schedule 
 Tell us about your pets, drop in their tasks, and PawPal+ will figure out the best way to fit everything into your day. No more forgotten walks or missed feedings! 🦴🐟
 """
 )
-
-
-
 
 st.divider()
 
@@ -140,6 +159,14 @@ else:
             }
             for p in st.session_state.owner.pets
         ])
+        remove_pet_name = st.selectbox(
+            "Remove a pet", [p.name for p in st.session_state.owner.pets], key="remove_pet_select"
+        )
+        if st.button("Remove pet 🗑️"):
+            st.session_state.owner.pets = [
+                p for p in st.session_state.owner.pets if p.name != remove_pet_name
+            ]
+            st.rerun()
     else:
         st.info("No pets yet. Add one above.")
 
@@ -193,7 +220,7 @@ else:
             icon = _SPECIES_EMOJI.get(pet.species, "🐾")
             st.markdown(f"**{icon} {pet.name}** ({pet.species})")
             sorted_tasks = sorted(pet.tasks, key=lambda t: (PRIORITY_ORDER[t.priority], t.duration_minutes))
-            st.table([
+            st.markdown(_colored_table([
                 {
                     "": _task_emoji(t.title),
                     "title": t.title,
@@ -201,9 +228,23 @@ else:
                     "duration": f"{t.duration_minutes} min",
                     "required": "🔒" if t.required else "",
                     "status": _status_badge(t.status),
+                    "_priority": t.priority,
                 }
                 for t in sorted_tasks
-            ])
+            ]), unsafe_allow_html=True)
+
+    all_tasks = [(pet, task) for pet in pets for task in pet.tasks]
+    if all_tasks:
+        st.markdown("**🗑️ Remove a task**")
+        task_options = {
+            f"{_SPECIES_EMOJI.get(pet.species, '🐾')} {pet.name} — {_task_emoji(task.title)} {task.title}": (pet, task)
+            for pet, task in all_tasks
+        }
+        remove_choice = st.selectbox("Select task to remove", list(task_options.keys()), key="remove_task_select")
+        if st.button("Remove task 🗑️"):
+            chosen_pet, chosen_task = task_options[remove_choice]
+            chosen_pet.tasks.remove(chosen_task)
+            st.rerun()
 
 st.divider()
 
