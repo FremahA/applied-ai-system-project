@@ -1,5 +1,75 @@
 """
 PawPal+ system classes.
+
+Architecture overview
+---------------------
+The system is built around five classes that form a clean pipeline from input
+to scheduled output:
+
+    Owner ──owns──► Pet ──has──► Task
+                               │
+                    Scheduler ─┘
+                        │
+                        ▼
+                      Plan
+
+Owner
+    Stores the pet owner's name, total daily time budget (available_minutes),
+    and optional buffer time to insert between tasks (buffer_minutes).  When
+    an owner has multiple pets the Scheduler allocates time proportionally
+    across them based on pending-task count.
+
+Pet
+    Stores a pet's name and species ("dog", "cat", or "other") and maintains
+    its ordered task list.  Tasks are kept sorted by duration after every
+    add_task or complete_task call.
+
+Task
+    A single care activity with a title, duration, priority, and optional
+    metadata:
+      - species     : restricts the task to a specific species (default: any).
+      - required    : if True, the task is always scheduled regardless of time.
+      - recurrence  : "daily" or "weekly"; completing a recurring task
+                      automatically spawns the next occurrence.
+      - due_date    : anchor date for the next occurrence of a recurring task.
+
+Scheduler
+    Produces a Plan for a given (Owner, Pet) pair.  The algorithm:
+      1. Filter tasks by species eligibility.
+      2. Always include required tasks.
+      3. Fill remaining time with optional tasks via 0/1 knapsack DP,
+         maximising total priority value.
+      4. Detect cross-plan time-slot conflicts (static helper).
+
+Plan
+    Immutable record of the scheduled tasks, total minutes used, and a
+    human-readable explanation.  get_time_slots() returns (task, start, end)
+    tuples laid out sequentially with buffer gaps.
+
+StreamlitUI
+    Thin glue layer that holds the current Owner, Pet, and Plan in one place
+    and delegates scheduling to Scheduler.  Used by app.py.
+
+Quick-start example
+-------------------
+    from pawpal_system import Owner, Pet, Task, Scheduler
+
+    owner = Owner(name="Alex", available_minutes=60, buffer_minutes=5)
+    dog   = Pet(name="Rex", species="dog")
+    owner.pets.append(dog)
+
+    dog.add_task(Task(title="Morning walk",  duration_minutes=20, priority="high"))
+    dog.add_task(Task(title="Brushing",      duration_minutes=10, priority="medium"))
+    dog.add_task(Task(title="Play fetch",    duration_minutes=30, priority="low"))
+
+    plan = Scheduler(owner, dog).generate_plan()
+    print(plan.explanation)
+
+Constants
+---------
+VALID_PRIORITIES   : {"high", "medium", "low"}
+VALID_SPECIES      : {"dog", "cat", "other"}
+VALID_RECURRENCES  : {"daily", "weekly"}
 """
 
 from dataclasses import dataclass, field

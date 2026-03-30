@@ -29,19 +29,19 @@ I designed the system this way so that each component has a clear responsibility
 
 - Did your design change during implementation?
 - If yes, describe at least one change and why you made it.  
-Yes, my design changed in several meaningful ways during implementation.  
+  Yes, my design changed in several meaningful ways during implementation.
 
 1. The Scheduler's algorithm changed from greedy to 0/1 knapsack.  
-   In the original skeleton, the scheduler sorted tasks by priority and duration, then greedily added tasks one by one until time ran out. This was simple but produced suboptimal plans — a single long high-priority task could block several shorter tasks that together would be more valuable. I replaced it with a dynamic programming knapsack algorithm that considers all combinations and selects the set of tasks with the highest total priority value that still fits within the available time. This was a more complex implementation but produces genuinely better schedules.  
+   In the original skeleton, the scheduler sorted tasks by priority and duration, then greedily added tasks one by one until time ran out. This was simple but produced suboptimal plans — a single long high-priority task could block several shorter tasks that together would be more valuable. I replaced it with a dynamic programming knapsack algorithm that considers all combinations and selects the set of tasks with the highest total priority value that still fits within the available time. This was a more complex implementation but produces genuinely better schedules.
 
 2. The Task class gained a species field.  
-   The original Task had no awareness of which pet it applied to. I added an optional species field so that tasks like "walk the dog" could be marked as dog-only and automatically excluded when the pet is a cat. The Scheduler now filters tasks by species eligibility before scheduling, and the explanation separately reports tasks excluded for species mismatch versus tasks skipped due to time.  
+   The original Task had no awareness of which pet it applied to. I added an optional species field so that tasks like "walk the dog" could be marked as dog-only and automatically excluded when the pet is a cat. The Scheduler now filters tasks by species eligibility before scheduling, and the explanation separately reports tasks excluded for species mismatch versus tasks skipped due to time.
 
 3. The Plan class gained owner and pet fields.  
-   In the skeleton, Plan only stored selected_tasks, total_minutes_used, and explanation. The final implementation added owner and pet so that the plan is self-contained — it carries all the context needed to display or summarize the result without passing the owner and pet separately to the UI.  
+   In the skeleton, Plan only stored selected_tasks, total_minutes_used, and explanation. The final implementation added owner and pet so that the plan is self-contained — it carries all the context needed to display or summarize the result without passing the owner and pet separately to the UI.
 
 4. Input validation was added to Owner, Pet, and Task.  
-   The initial skeletons were plain dataclasses with no validation. I added **post_init** methods to enforce that available_minutes and duration_minutes are positive, that priority is one of {"high", "medium", "low"}, and that species is one of {"dog", "cat", "other"}. This prevents silent bugs caused by bad input reaching the scheduler.  
+   The initial skeletons were plain dataclasses with no validation. I added **post_init** methods to enforce that available_minutes and duration_minutes are positive, that priority is one of {"high", "medium", "low"}, and that species is one of {"dog", "cat", "other"}. This prevents silent bugs caused by bad input reaching the scheduler.
 
 ---
 
@@ -52,10 +52,13 @@ Yes, my design changed in several meaningful ways during implementation.
 - What constraints does your scheduler consider (for example: time, priority, preferences)?
 - How did you decide which constraints mattered most?
 
-**b. Tradeoffs**
+**b. Tradeoffs**. 
 
-- Describe one tradeoff your scheduler makes.
-- Why is that tradeoff reasonable for this scenario?
+**Tradeoff: Conflict detection is reactive, not preventive.**
+
+The scheduler creates each pet's plan separately, giving each pet its fair share of the owner's available time. After that, it checks the schedules for any overlapping tasks. If it finds overlaps, it just reports a warning—it doesn't try to fix the problem by rescheduling anything.
+
+This approach makes sense for a daily pet care planner because most people have just one pet, and in that case, there can't be any conflicts within a single pet's schedule by design. For households with multiple pets, the way time is divided proportionally already helps avoid overlaps without needing a complicated joint scheduling system. Using reactive detection keeps each pet's plan straightforward and optimized individually, while still letting the user know about any issues. Trying to prevent conflicts upfront by finding a perfect schedule for all pets at once would be way too complex and unnecessary for a typical home with a couple of pets whose care doesn't need to be coordinated down to the minute.  
 
 ---
 
