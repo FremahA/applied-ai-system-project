@@ -70,3 +70,20 @@ for plan in (buddy_plan, whiskers_plan):
     print()
     print(plan.explanation)
     print("-" * 50)
+
+# --- Demonstrate conflict detection ---
+print()
+print("=" * 50)
+print("         CONFLICT DETECTION — same-time tasks")
+print("=" * 50)
+
+# Both plans start at minute 0, so tasks that overlap in duration will conflict.
+# Buddy's and Whiskers's first scheduled tasks run at the same time (owner does
+# them in parallel on the shared timeline), triggering warnings.
+conflicts = Scheduler.detect_conflicts(buddy_plan, whiskers_plan)
+if conflicts:
+    print(f"\n{len(conflicts)} scheduling conflict(s) found:")
+    for msg in conflicts:
+        print(f"  {msg}")
+else:
+    print("\nNo scheduling conflicts detected.")
