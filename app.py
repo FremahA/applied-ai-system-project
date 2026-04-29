@@ -6,14 +6,11 @@ from pawpal_system import Owner, Pet, Task, Scheduler
 from ai_advisor import PawPalAgent
 
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
-
 _SPECIES_EMOJI = {"dog": "🐕", "cat": "🐱", "other": "🐾"}
-
 _PRIORITY_BG = {"high": "#ffe5e5", "medium": "#fff9e6", "low": "#eafaea"}
 
 
 def _colored_table(rows: list[dict], priority_key: str = "_priority") -> str:
-    """Use tabulate to build an HTML table, then inject per-row background colors by priority."""
     priorities = [r.get(priority_key, "") for r in rows]
     visible = [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows]
     base_html = tabulate(visible, headers="keys", tablefmt="html")
@@ -28,6 +25,7 @@ def _colored_table(rows: list[dict], priority_key: str = "_priority") -> str:
             row_idx += 1
         result.append(line)
     return "\n".join(result)
+
 
 _TASK_KEYWORDS = [
     ({"walk", "stroll", "run", "jog"},          "🦮"),
@@ -59,14 +57,11 @@ def _status_badge(status: str) -> str:
 
 
 def _render_plan(plan, allocated_minutes: Optional[int] = None) -> None:
-    """Render a Plan's time slots and summary using Streamlit components."""
     budget = allocated_minutes if allocated_minutes is not None else plan.owner.available_minutes
-
     col_used, col_budget, col_tasks = st.columns(3)
     col_used.metric("Minutes used", plan.total_minutes_used)
     col_budget.metric("Budget", budget)
     col_tasks.metric("Tasks scheduled", len(plan.selected_tasks))
-
     slots = plan.get_time_slots()
     if slots:
         st.markdown(_colored_table([
@@ -83,109 +78,252 @@ def _render_plan(plan, allocated_minutes: Optional[int] = None) -> None:
         ]), unsafe_allow_html=True)
     else:
         st.info("No tasks could be scheduled within the time budget.")
-
-    # Skipped / excluded tasks pulled from the explanation text are already
-    # in plan.explanation — show it collapsed so it's available but not loud.
     with st.expander("Full explanation"):
         st.text(plan.explanation)
 
-st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
-
-st.title("🐾 PawPal+")
-
-st.markdown(
-    """
-### Your pet's day, perfectly planned! 🐕🐱
-
-Tails are wagging and paws are ready — let's build the ultimate care schedule for your furry (or not-so-furry) family members.
-
-Tell us about your pets, drop in their tasks, and PawPal+ will figure out the best way to fit everything into your day. No more forgotten walks or missed feedings! 🦴🐟
-"""
-)
-
-st.divider()
 
 # ---------------------------------------------------------------------------
-# Step 1 — Owner
+# Page config
 # ---------------------------------------------------------------------------
-st.subheader("👤 Who's the Caretaker?")
+st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="wide")
 
-owner_name = st.text_input("Owner name", value="Jordan")
-col_time, col_buf = st.columns(2)
-with col_time:
+# ---------------------------------------------------------------------------
+# Global styles
+# ---------------------------------------------------------------------------
+st.markdown("""
+<style>
+/* ── Background ── */
+.stApp {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #11998e 100%);
+    background-attachment: fixed;
+}
+
+/* ── Main content card ── */
+.block-container {
+    background: rgba(255, 255, 255, 0.97);
+    border-radius: 20px;
+    padding: 2rem 2.5rem !important;
+    margin-top: 1rem;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+
+/* ── Sidebar ── */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #2d1b69 0%, #11998e 100%) !important;
+}
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] .stMarkdown {
+    color: rgba(255,255,255,0.9) !important;
+}
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    color: white !important;
+}
+[data-testid="stSidebar"] input,
+[data-testid="stSidebar"] .stTextInput input,
+[data-testid="stSidebar"] .stNumberInput input {
+    background: white !important;
+    color: #2d1b69 !important;
+    border-color: rgba(255,255,255,0.5) !important;
+    border-radius: 8px !important;
+    caret-color: #2d1b69 !important;
+    font-weight: 600 !important;
+}
+[data-testid="stSidebar"] input::placeholder {
+    color: #aaa !important;
+}
+[data-testid="stSidebar"] .stSelectbox > div > div {
+    background: white !important;
+    color: #2d1b69 !important;
+    border-color: rgba(255,255,255,0.5) !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+}
+[data-testid="stSidebar"] .stSelectbox svg {
+    fill: #2d1b69 !important;
+}
+
+/* ── Buttons ── */
+.stButton > button {
+    background: linear-gradient(90deg, #667eea, #764ba2) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.3px;
+    padding: 0.45rem 1.4rem !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 4px 15px rgba(102,126,234,0.35) !important;
+}
+.stButton > button:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 20px rgba(102,126,234,0.55) !important;
+    background: linear-gradient(90deg, #764ba2, #667eea) !important;
+}
+.stButton > button:active {
+    transform: translateY(0px) !important;
+}
+
+/* ── Section headers ── */
+h2 {
+    color: #764ba2 !important;
+    font-weight: 700 !important;
+    border-left: 4px solid #667eea;
+    padding-left: 12px;
+    margin-top: 0.5rem !important;
+}
+h3 { color: #667eea !important; }
+
+/* ── Metric cards ── */
+[data-testid="metric-container"] {
+    background: linear-gradient(135deg, #f5f7ff, #eef0ff) !important;
+    border-radius: 12px !important;
+    padding: 1rem !important;
+    border: 1px solid #d5dbff !important;
+    box-shadow: 0 2px 8px rgba(102,126,234,0.12) !important;
+}
+
+/* ── Divider ── */
+hr {
+    border: none !important;
+    height: 2px !important;
+    background: linear-gradient(90deg, #667eea, #764ba2, #11998e) !important;
+    border-radius: 2px !important;
+    opacity: 0.25 !important;
+    margin: 1.5rem 0 !important;
+}
+
+/* ── Alerts ── */
+.stAlert { border-radius: 10px !important; }
+
+/* ── Expander ── */
+[data-testid="stExpander"] {
+    border-radius: 10px !important;
+    border: 1px solid #e0e4ff !important;
+}
+
+/* ── Tables ── */
+table {
+    border-radius: 10px;
+    overflow: hidden;
+    width: 100%;
+    border-collapse: collapse;
+}
+th {
+    background: linear-gradient(90deg, #667eea, #764ba2) !important;
+    color: white !important;
+    padding: 10px 14px !important;
+    font-size: 0.85rem;
+    letter-spacing: 0.4px;
+}
+td { padding: 8px 14px !important; font-size: 0.9rem; }
+
+/* ── Section card wrapper ── */
+.section-card {
+    background: #f8f9ff;
+    border-radius: 14px;
+    border: 1px solid #e0e4ff;
+    padding: 1.2rem 1.4rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 2px 12px rgba(102,126,234,0.08);
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ---------------------------------------------------------------------------
+# Sidebar — Owner & Pets
+# ---------------------------------------------------------------------------
+with st.sidebar:
+    st.markdown("## 🐾 PawPal+")
+    st.markdown("---")
+
+    # ── Owner ──
+    st.markdown("### 👤 Caretaker")
+    owner_name = st.text_input("Name", value="Jordan", key="owner_name_input")
     available_minutes = st.number_input(
         "Available minutes today", min_value=1, max_value=1440, value=120
     )
-with col_buf:
     buffer_minutes = st.number_input(
         "Buffer between tasks (min)", min_value=0, max_value=60, value=5,
-        help="Rest/travel time inserted between consecutive tasks",
+        help="Rest/travel time between tasks",
     )
-
-if st.button("Create owner"):
-    st.session_state.owner = Owner(
-        owner_name, int(available_minutes), buffer_minutes=int(buffer_minutes)
-    )
-
-if "owner" in st.session_state:
-    o = st.session_state.owner
-    st.success(f"{o.name} — {o.available_minutes} min available, {o.buffer_minutes} min buffer")
-
-st.divider()
-
-# ---------------------------------------------------------------------------
-# Step 2 — Pets
-# ---------------------------------------------------------------------------
-st.subheader("🐾 Meet the Pets")
-
-if "owner" not in st.session_state:
-    st.info("Create an owner first.")
-else:
-    col_pname, col_species = st.columns(2)
-    with col_pname:
-        pet_name = st.text_input("Pet name", value="Mochi")
-    with col_species:
-        species = st.selectbox("Species", ["dog", "cat", "other"])
-
-    if st.button("Add pet"):
-        new_pet = Pet(pet_name, species)
-        st.session_state.owner.pets.append(new_pet)
-
-    if st.session_state.owner.pets:
-        st.write("Your pets:")
-        st.table([
-            {
-                "": _SPECIES_EMOJI.get(p.species, "🐾"),
-                "name": p.name,
-                "species": p.species,
-                "tasks": len(p.tasks),
-            }
-            for p in st.session_state.owner.pets
-        ])
-        remove_pet_name = st.selectbox(
-            "Remove a pet", [p.name for p in st.session_state.owner.pets], key="remove_pet_select"
+    if st.button("Save owner"):
+        st.session_state.owner = Owner(
+            owner_name, int(available_minutes), buffer_minutes=int(buffer_minutes)
         )
-        if st.button("Remove pet 🗑️"):
-            st.session_state.owner.pets = [
-                p for p in st.session_state.owner.pets if p.name != remove_pet_name
-            ]
-            st.rerun()
-    else:
-        st.info("No pets yet. Add one above.")
+        st.success(f"Saved {owner_name}!")
 
+    if "owner" in st.session_state:
+        o = st.session_state.owner
+        st.markdown(
+            f"<div style='background:rgba(255,255,255,0.15);border-radius:8px;"
+            f"padding:8px 12px;margin-top:6px;color:white;font-size:0.85rem'>"
+            f"⏱ {o.available_minutes} min &nbsp;|&nbsp; 🔄 {o.buffer_minutes} min buffer</div>",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("---")
+
+    # ── Pets ──
+    st.markdown("### 🐾 Pets")
+    if "owner" not in st.session_state:
+        st.caption("Save an owner first.")
+    else:
+        col_pname, col_species = st.columns(2)
+        with col_pname:
+            pet_name = st.text_input("Pet name", value="Mochi", key="pet_name_input")
+        with col_species:
+            species = st.selectbox("Species", ["dog", "cat", "other"], key="species_input")
+
+        if st.button("Add pet"):
+            new_pet = Pet(pet_name, species)
+            st.session_state.owner.pets.append(new_pet)
+            st.success(f"{pet_name} added!")
+
+        if st.session_state.owner.pets:
+            for p in st.session_state.owner.pets:
+                icon = _SPECIES_EMOJI.get(p.species, "🐾")
+                st.markdown(
+                    f"<div style='background:rgba(255,255,255,0.15);border-radius:8px;"
+                    f"padding:6px 10px;margin:4px 0;color:white;font-size:0.88rem'>"
+                    f"{icon} <b>{p.name}</b> &nbsp;·&nbsp; {p.species} &nbsp;·&nbsp; {len(p.tasks)} tasks</div>",
+                    unsafe_allow_html=True,
+                )
+            remove_pet_name = st.selectbox(
+                "Remove pet", [p.name for p in st.session_state.owner.pets],
+                key="remove_pet_select",
+            )
+            if st.button("Remove 🗑️"):
+                st.session_state.owner.pets = [
+                    p for p in st.session_state.owner.pets if p.name != remove_pet_name
+                ]
+                st.rerun()
+
+# ---------------------------------------------------------------------------
+# Main — Header
+# ---------------------------------------------------------------------------
+st.markdown(
+    "<h1 style='color:#764ba2;font-size:2.4rem;margin-bottom:0'>🐾 PawPal+</h1>"
+    "<p style='color:#888;margin-top:4px;font-size:1rem'>"
+    "AI-powered daily care scheduling for your pets</p>",
+    unsafe_allow_html=True,
+)
 st.divider()
 
 # ---------------------------------------------------------------------------
-# Step 3 — Tasks
+# Step 1 — Tasks
 # ---------------------------------------------------------------------------
 st.subheader("📋 What Needs to Get Done?")
 
 if "owner" not in st.session_state or not st.session_state.owner.pets:
-    st.info("Add at least one pet first.")
+    st.info("Set up an owner and add at least one pet in the sidebar to get started.")
 else:
     pets = st.session_state.owner.pets
     pet_names = [p.name for p in pets]
 
+    st.markdown("<div class='section-card'>", unsafe_allow_html=True)
     selected_pet_name = st.selectbox("Add task to pet", pet_names, key="task_target_pet")
     target_pet = next(p for p in pets if p.name == selected_pet_name)
 
@@ -197,26 +335,25 @@ else:
     with col3:
         priority = st.selectbox("Priority", ["low", "medium", "high"], index=2)
     with col4:
-        required = st.checkbox(
-            "Required", value=False,
-            help="Always include regardless of time pressure",
-        )
+        st.markdown("<div style='margin-top:28px'>", unsafe_allow_html=True)
+        required = st.checkbox("Required", value=False, help="Always include regardless of time pressure")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    if st.button("Add task"):
+    if st.button("Add task ＋"):
         duplicate = any(
             t.title.lower() == task_title.strip().lower() and t.status == "pending"
             for t in target_pet.tasks
         )
         if duplicate:
-            st.warning(f"'{task_title}' is already a pending task for {target_pet.name}. Skipping.")
+            st.warning(f"'{task_title}' is already pending for {target_pet.name}.")
         else:
-            task = Task(
+            target_pet.add_task(Task(
                 title=task_title,
                 duration_minutes=int(duration),
                 priority=priority,
                 required=required,
-            )
-            target_pet.add_task(task)
+            ))
+    st.markdown("</div>", unsafe_allow_html=True)
 
     ai_titles = st.session_state.get("ai_added_task_titles", set())
     for pet in pets:
@@ -253,22 +390,22 @@ else:
 st.divider()
 
 # ---------------------------------------------------------------------------
-# Step 4 — AI Care Agent
+# Step 2 — AI Care Agent
 # ---------------------------------------------------------------------------
 st.subheader("🤖 AI Care Agent")
 st.markdown(
-    "Let Claude analyze your pets' schedules, fill care gaps, and build optimized plans — automatically. "
-    "Tasks added by the agent are marked with 🤖 in the task list above."
+    "Let Claude analyze your pets' schedules, fill care gaps, and build optimized plans automatically. "
+    "Tasks added by the agent are marked with 🤖 above."
 )
 
 if "owner" not in st.session_state or not st.session_state.owner.pets:
-    st.info("Add at least one pet first.")
+    st.info("Add at least one pet in the sidebar first.")
 elif not any(p.tasks for p in st.session_state.owner.pets):
     st.info("Add tasks to at least one pet before running the AI agent.")
 elif not os.environ.get("ANTHROPIC_API_KEY"):
     st.warning(
         "Set the **ANTHROPIC_API_KEY** environment variable to enable the AI Care Agent.\n\n"
-        "Run: `export ANTHROPIC_API_KEY=sk-ant-...` then restart the app."
+        "`export ANTHROPIC_API_KEY=sk-ant-...` then restart the app."
     )
 else:
     if st.button("🤖 Run AI Care Agent"):
@@ -283,15 +420,10 @@ else:
                 result = agent.run(on_step=on_step)
                 status.update(label="✅ Analysis complete!", state="complete", expanded=False)
 
-                # Track AI-added task titles so the task list can badge them
-                ai_titles = {
-                    (item["pet"], item["title"]) for item in result["added_tasks"]
-                }
+                ai_titles = {(item["pet"], item["title"]) for item in result["added_tasks"]}
                 existing = st.session_state.get("ai_added_task_titles", set())
                 st.session_state.ai_added_task_titles = existing | ai_titles
 
-                # Build the schedule session state from AI-generated plans so
-                # the schedule section below renders the AI output automatically.
                 if result["plans"]:
                     owner = st.session_state.owner
                     pets_in_plan = [p for p in owner.pets if p.name in result["plans"]]
@@ -300,9 +432,7 @@ else:
                     for pet in pets_in_plan:
                         plan = result["plans"][pet.name]
                         plan.start_offset = running_offset
-                        allocated = int(
-                            owner.available_minutes * len(pet.tasks) / max(total_tasks, 1)
-                        )
+                        allocated = int(owner.available_minutes * len(pet.tasks) / max(total_tasks, 1))
                         all_plans.append((plan, allocated))
                         slots = plan.get_time_slots()
                         if slots:
@@ -314,7 +444,6 @@ else:
                         "conflicts": conflicts,
                         "ai_generated": True,
                     }
-
                 st.session_state.ai_result = result
 
             except Exception as exc:
@@ -324,9 +453,7 @@ else:
     if "ai_result" in st.session_state:
         result = st.session_state.ai_result
         if result["added_tasks"]:
-            st.success(
-                f"✨ Agent added **{len(result['added_tasks'])} task(s)** to fill care gaps:"
-            )
+            st.success(f"✨ Agent added **{len(result['added_tasks'])} task(s)** to fill care gaps:")
             for item in result["added_tasks"]:
                 badge = "🔒 " if item.get("required") else ""
                 st.markdown(
@@ -345,9 +472,9 @@ else:
 st.divider()
 
 # ---------------------------------------------------------------------------
-# Step 5 — Generate schedule
+# Step 3 — Generate schedule
 # ---------------------------------------------------------------------------
-st.subheader("🗓️ Let's Build the Perfect Day!")
+st.subheader("🗓️ Daily Schedule")
 
 if "owner" not in st.session_state or not st.session_state.owner.pets:
     st.info("Add at least one pet with tasks first.")
@@ -358,12 +485,18 @@ else:
     if not pets_with_tasks:
         st.info("Add tasks to at least one pet before generating a schedule.")
     else:
-        pet_options = [p.name for p in pets_with_tasks] + (
-            ["All pets"] if len(pets_with_tasks) > 1 else []
-        )
-        schedule_target = st.selectbox("Generate schedule for", pet_options)
+        col_sel, col_btn = st.columns([3, 1])
+        with col_sel:
+            pet_options = [p.name for p in pets_with_tasks] + (
+                ["All pets"] if len(pets_with_tasks) > 1 else []
+            )
+            schedule_target = st.selectbox("Generate schedule for", pet_options)
+        with col_btn:
+            st.markdown("<div style='margin-top:28px'>", unsafe_allow_html=True)
+            gen_clicked = st.button("Generate 🗓️")
+            st.markdown("</div>", unsafe_allow_html=True)
 
-        if st.button("Generate schedule"):
+        if gen_clicked:
             owner = st.session_state.owner
             for pet in owner.pets:
                 for task in pet.tasks:
@@ -371,8 +504,7 @@ else:
 
             if schedule_target == "All pets":
                 total_tasks = sum(len(p.tasks) for p in pets_with_tasks)
-                all_plans = []
-                running_offset = 0
+                all_plans, running_offset = [], 0
                 for pet in pets_with_tasks:
                     scheduler = Scheduler(owner=owner, pet=pet)
                     plan = scheduler.generate_plan()
@@ -387,16 +519,12 @@ else:
             else:
                 pet = next(p for p in pets_with_tasks if p.name == schedule_target)
                 single_pet_owner = Owner(
-                    owner.name,
-                    owner.available_minutes,
-                    buffer_minutes=owner.buffer_minutes,
-                    pets=[pet],
+                    owner.name, owner.available_minutes,
+                    buffer_minutes=owner.buffer_minutes, pets=[pet],
                 )
-                scheduler = Scheduler(owner=single_pet_owner, pet=pet)
-                plan = scheduler.generate_plan()
+                plan = Scheduler(owner=single_pet_owner, pet=pet).generate_plan()
                 st.session_state.schedule = {"type": "single", "pet": pet, "plan": plan}
 
-        # Always render the saved schedule (AI-generated or manual)
         if "schedule" in st.session_state:
             sched = st.session_state.schedule
             if sched.get("ai_generated"):
@@ -424,7 +552,7 @@ else:
 st.divider()
 
 # ---------------------------------------------------------------------------
-# Step 6 — Mark tasks complete
+# Step 4 — Mark tasks complete
 # ---------------------------------------------------------------------------
 st.subheader("☑️ Done for the Day?")
 
@@ -440,13 +568,18 @@ else:
     if not all_pending:
         st.success("🎉 All tasks are complete! Great job taking care of your pets today!")
     else:
-        options = {
-            f"{_SPECIES_EMOJI.get(pet.species, '🐾')} {pet.name} — {_task_emoji(task.title)} {task.title}": (pet, task)
-            for pet, task in all_pending
-        }
-        chosen = st.selectbox("Which task did you finish?", list(options.keys()), key="complete_task_select")
-        if st.button("Mark complete ✅"):
-            chosen_pet, chosen_task = options[chosen]
-            chosen_pet.complete_task(chosen_task)
-            st.success(f"✅ '{chosen_task.title}' marked complete for {chosen_pet.name}!")
-            st.rerun()
+        col_pick, col_done = st.columns([4, 1])
+        with col_pick:
+            options = {
+                f"{_SPECIES_EMOJI.get(pet.species, '🐾')} {pet.name} — {_task_emoji(task.title)} {task.title}": (pet, task)
+                for pet, task in all_pending
+            }
+            chosen = st.selectbox("Which task did you finish?", list(options.keys()), key="complete_task_select")
+        with col_done:
+            st.markdown("<div style='margin-top:28px'>", unsafe_allow_html=True)
+            if st.button("Mark done ✅"):
+                chosen_pet, chosen_task = options[chosen]
+                chosen_pet.complete_task(chosen_task)
+                st.success(f"✅ '{chosen_task.title}' marked complete for {chosen_pet.name}!")
+                st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
