@@ -222,7 +222,21 @@ class PawPalAgent:
             ],
         }
 
-    def _dispatch(self, tool_name: str, tool_input: dict) -> str:
+    def _dispatch(self, tool_name: str, tool_input: dict, on_step=None) -> str:
+        # Emit a human-readable description of the call before executing it
+        if on_step:
+            pet = tool_input.get("pet_name", "")
+            if tool_name == "get_pets_and_tasks":
+                on_step("call", "Checking current tasks for all pets")
+            elif tool_name == "analyze_care_gaps":
+                on_step("call", f"Analyzing care gaps for **{pet}**")
+            elif tool_name == "add_recommended_task":
+                on_step("call", f"Adding task for **{pet}**: {tool_input.get('title')} "
+                                f"({tool_input.get('priority')} priority, "
+                                f"{tool_input.get('duration_minutes')} min)")
+            elif tool_name == "generate_optimized_schedule":
+                on_step("call", f"Generating optimized schedule for **{pet}**")
+
         if tool_name == "get_pets_and_tasks":
             result = self._get_pets_and_tasks()
         elif tool_name == "analyze_care_gaps":
@@ -239,15 +253,39 @@ class PawPalAgent:
             result = self._generate_optimized_schedule(tool_input["pet_name"])
         else:
             result = {"error": f"Unknown tool: {tool_name}"}
+
+        # Emit a short summary of the result
+        if on_step:
+            if tool_name == "analyze_care_gaps" and "missing_categories" in result:
+                missing = result["missing_categories"]
+                if missing:
+                    on_step("result", f"Missing categories: {', '.join(missing)}")
+                else:
+                    on_step("result", "All care categories covered")
+            elif tool_name == "add_recommended_task":
+                status = result.get("status", "")
+                if status == "added":
+                    on_step("result", f"Task added to {result.get('pet')}'s list")
+                elif status == "skipped":
+                    on_step("result", f"Skipped: {result.get('reason', '')}")
+            elif tool_name == "generate_optimized_schedule" and "tasks_scheduled" in result:
+                on_step("result", f"Scheduled {result['tasks_scheduled']} task(s) "
+                                  f"using {result['total_minutes_used']} min")
+
         return json.dumps(result)
 
     # ------------------------------------------------------------------
     # Agentic loop
     # ------------------------------------------------------------------
 
-    def run(self) -> dict:
+    def run(self, on_step=None) -> dict:
         """
         Run the agentic loop until Claude signals end_turn.
+
+        on_step: optional callable(kind, message) where kind is "call" or "result".
+                 Called for every tool invocation and its result so callers can
+                 display observable intermediate steps in real time.
+
         Returns a dict with keys: summary, added_tasks, plans.
         """
         pet_names = [p.name for p in self.owner.pets]
@@ -291,7 +329,7 @@ class PawPalAgent:
                     {
                         "type": "tool_result",
                         "tool_use_id": block.id,
-                        "content": self._dispatch(block.name, block.input),
+                        "content": self._dispatch(block.name, block.input, on_step=on_step),
                     }
                     for block in response.content
                     if block.type == "tool_use"

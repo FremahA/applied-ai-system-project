@@ -272,10 +272,16 @@ elif not os.environ.get("ANTHROPIC_API_KEY"):
     )
 else:
     if st.button("🤖 Run AI Care Agent"):
-        with st.spinner("Claude is analyzing care gaps and optimizing your pets' schedules…"):
+        with st.status("🤖 Claude is analyzing your pets' care schedule…", expanded=True) as status:
             try:
                 agent = PawPalAgent(st.session_state.owner)
-                result = agent.run()
+
+                def on_step(kind, message):
+                    icon = "⚙️" if kind == "call" else "↳"
+                    st.write(f"{icon} {message}")
+
+                result = agent.run(on_step=on_step)
+                status.update(label="✅ Analysis complete!", state="complete", expanded=False)
 
                 # Track AI-added task titles so the task list can badge them
                 ai_titles = {
@@ -312,6 +318,7 @@ else:
                 st.session_state.ai_result = result
 
             except Exception as exc:
+                status.update(label="❌ Agent error", state="error", expanded=True)
                 st.error(f"AI agent error: {exc}")
 
     if "ai_result" in st.session_state:
