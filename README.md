@@ -77,7 +77,7 @@ python eval_harness.py
 
 ## App Preview
 
-![PawPal+ App](assets/pawpal%20display.png)
+![PawPal+ App](assets/pawpal_dispaly.png)
 
 ---
 
