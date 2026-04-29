@@ -145,3 +145,33 @@ I would also add a way to set a specific start time for the day's schedule (e.g.
 **c. Key takeaway**
 
 The most important thing I learned is that AI tools are most useful when you give them a specific, constrained question and not an open-ended one. Asking "how does 0/1 knapsack work with variable weights?" produced a clean, usable explanation. Asking "make the scheduler better" produced suggestions that did not fit the project's constraints at all. Treating AI like a knowledgeable collaborator who needs context to help, rather than an oracle who already knows what you want, made the collaboration much more productive and kept me in control of the design decisions.
+
+---
+
+## 6. AI Reliability, Limitations, and Ethics
+
+**a. Limitations and biases in the system**
+
+The AI Care Agent has a few meaningful limitations I noticed during development and testing:
+
+- **Keyword matching is brittle.** The agent identifies missing care categories by scanning task titles for known words (e.g. "walk" → exercise, "feed" → feeding). A task titled "agility course" would not register as exercise, so the agent might incorrectly flag that category as missing and add a duplicate. It works well for plain, common task names but breaks with creative wording.
+- **The five care categories are fixed.** Exercise, feeding, grooming, health, and enrichment are hardcoded. They do not account for species-specific needs beyond the three supported types, or for pets with medical conditions or age-related routines that fall outside those buckets.
+- **Claude's suggestions reflect its training data.** The LLM recommends tasks based on patterns in its training data, which skews toward common domestic pet norms. A 30-minute walk might be appropriate for a young Labrador but wrong for a senior small-breed dog. The agent has no way to distinguish them because it only sees a name and species.
+
+**b. Could the AI be misused, and how is that prevented?**
+
+The most realistic risk is the agent adding tasks that are unnecessary or subtly wrong — for example, recommending a daily health check for a perfectly healthy pet, or adding a long grooming session when the owner only has a few minutes available. Acting on those suggestions without reviewing them would waste time, and in a medical care context could create a false sense that something is being managed when it is not.
+
+Three things in the design reduce this risk. First, the agent can only add tasks to fill identified gaps — it cannot modify or delete anything the owner already entered. Second, every AI-added task is marked with a 🤖 badge in the task table so the owner always knows which items came from the AI and can remove any before running the final schedule. Third, the Scheduler enforces the time budget regardless of how many tasks the agent adds. If the agent over-recommends, the knapsack drops the lowest-priority extras on its own — the AI's additions do not get special treatment over the owner's tasks.
+
+**c. What surprised me while testing the AI's reliability**
+
+The biggest surprise was that the duplicate check needed to be case-insensitive. I wrote a test using "Morning Walk" and "morning walk" as separate entries, expecting them to be treated as different tasks, and found that a simple string comparison would have added both. That would have been a subtle bug — the user would not notice a duplicate until the schedule showed the same task twice. Catching it through a test before it reached the UI felt like exactly the kind of thing testing is for.
+
+I also did not anticipate how important it was to filter out completed tasks before checking care gaps. An early version counted completed tasks as covering their category, meaning an owner who had already completed the morning walk would not get an exercise gap flagged — even though the rest of the day still had no exercise planned. Filtering to pending tasks only fixed it, but I only found the issue by writing a test specifically for that state.
+
+**d. Collaboration with AI: one helpful suggestion, one flawed one**
+
+*Helpful suggestion:* When designing the agentic workflow, I asked whether schedule generation should happen inside the agent loop or after it finishes. The suggestion was to make `generate_optimized_schedule` a tool the agent calls itself, rather than running the scheduler automatically once the agent was done. That turned out to be the right call. It means the agent receives the actual schedule as a tool result and can reference specific tasks and times in its final summary, which made the explanations much more grounded and specific.
+
+*Flawed suggestion:* Early on, the AI suggested building a vector database (FAISS or ChromaDB) to store a pet care knowledge base for RAG-style retrieval. The idea was that the agent would search this knowledge base before recommending tasks. For the actual problem — identifying five fixed care categories from a short task title list — that was a large infrastructure investment for no real benefit. A keyword lookup over a small dictionary solved the same problem in ten lines and was far easier to test. I rejected the vector database suggestion and kept the simpler approach. It was a good reminder that the AI tends to reach for powerful tools even when a simpler one fits better, and that deciding which tool matches the actual complexity of the problem is a judgment call the developer has to make.
