@@ -464,7 +464,7 @@ MIT
 
 **GitHub:** https://github.com/FremahA/applied-ai-system-project
 
-**Loom walkthrough:** _(coming soon)_
+**Loom walkthrough:** [Watch the demo](https://www.loom.com/share/0f4b55689c1e4e16a3d7a739c220e04e)
 
 **Reflection**
 
