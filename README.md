@@ -14,49 +14,7 @@
 
 ## Architecture Overview
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                      Streamlit UI (app.py)                        │
-│                                                                   │
-│  Step 1: Owner setup  →  Step 2: Add pets  →  Step 3: Add tasks │
-│                                                                   │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │  Step 4: AI Care Agent (NEW)                             │  │
-│  │  ┌──────────────────────────────────────────────────────┐ │  │
-│  │  │ PawPalAgent + Claude Tool Use (ai_advisor.py)       │ │  │
-│  │  │                                                      │ │  │
-│  │  │ 1. get_pets_and_tasks() → reads current state      │ │  │
-│  │  │ 2. analyze_care_gaps() → per-pet missing categories │ │  │
-│  │  │ 3. add_recommended_task() → mutates pet.tasks      │ │  │
-│  │  │ 4. generate_optimized_schedule() → Scheduler.Plan  │ │  │
-│  │  │                                                      │ │  │
-│  │  └──────────────────────────────────────────────────────┘ │  │
-│  │                                                            │  │
-│  │  All AI actions mutate session state → Schedule rendered  │  │
-│  └────────────────────────────────────────────────────────────┘  │
-│                                                                   │
-│  Step 5: Generate schedule  →  Step 6: Mark tasks complete      │
-└──────────────────────────────────────────────────────────────────┘
-         │                               │
-         ▼                               ▼
-    ┌─────────────────┐           ┌──────────────┐
-    │  pawpal_system  │           │ PawPalAgent  │
-    │                 │           │              │
-    │ Owner           │           │ Tool Use:    │
-    │ Pet             │◄──────────│ Dispatch     │
-    │ Task            │           │ Calls        │
-    │ Scheduler       │           │              │
-    │ Plan            │           │ Claude SDK   │
-    └─────────────────┘           └──────────────┘
-         │
-         ▼ (0/1 Knapsack DP)
-      Plan (optimized schedule)
-         │
-         ▼ (Rendered as)
-    Colored HTML table with task emojis,
-    priority badges, required indicators,
-    time slots, and AI-added badges (🤖)
-```
+![System Architecture Diagram](assets/system_diagram.png)
 
 **Key components:**
 
