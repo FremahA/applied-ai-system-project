@@ -61,8 +61,9 @@
 **Key components:**
 
 - **pawpal_system.py** — Core scheduling classes: Owner, Pet, Task, Scheduler, Plan. Implements 0/1 knapsack optimization and conflict detection.
-- **ai_advisor.py (NEW)** — PawPalAgent class that orchestrates an agentic loop with Claude, using tool use to read pet state, analyze care gaps, add recommended tasks, and generate schedules.
-- **app.py** — Streamlit UI with six integrated steps. Step 4 (new) invokes the AI agent; the resulting tasks are merged into the app state and marked with a 🤖 badge.
+- **ai_advisor.py** — PawPalAgent class that orchestrates an agentic loop with Claude, using tool use to read pet state, analyze care gaps, add recommended tasks, and generate schedules. Supports an `on_step` callback so callers can observe each tool call and result in real time.
+- **app.py** — Streamlit UI with six integrated steps. Step 4 invokes the AI agent; each tool call is shown live in a collapsible `st.status()` panel as the agent runs. AI-added tasks are merged into the app state and marked with a 🤖 badge.
+- **eval_harness.py** — Standalone evaluation script that runs the agent's tool layer against eight predefined scenarios and prints a pass/fail report with scores. No API key required.
 
 ---
 
@@ -105,7 +106,13 @@ The app will open in your browser at `http://localhost:8501`.
 ### 4. (Optional) Run tests
 
 ```bash
-python -m pytest tests/test_pawpal.py -v
+python -m pytest tests/ -v
+```
+
+### 5. (Optional) Run the AI evaluation harness
+
+```bash
+python eval_harness.py
 ```
 
 ---
@@ -307,9 +314,9 @@ Play time fills enrichment. One duplicate walk was skipped.
 
 ## Testing Summary
 
-### Original System Tests (21 tests in `tests/test_pawpal.py`)
+### Automated Tests (39 tests across two files)
 
-**What Worked:**
+**`tests/test_pawpal.py` — 21 tests covering the core scheduling system:**
 
 - ✅ Task sorting maintained correctly after every `add_task` call
 - ✅ Required tasks always included even when they exceed budget
@@ -319,45 +326,47 @@ Play time fills enrichment. One duplicate walk was skipped.
 - ✅ Buffer time correctly added between tasks
 - ✅ Recurring tasks spawn next occurrence with correct due_date
 
-**What Didn't Work (Initially):**
+**`tests/test_ai_advisor.py` — 18 tests covering the AI agent's tool layer:**
+
+- ✅ Gap detection correctly identifies all missing categories for a pet with no tasks
+- ✅ Covered categories correctly excluded when a matching task exists
+- ✅ `add_recommended_task()` mutates the live Pet object and records the addition
+- ✅ Duplicate prevention blocks re-adding a task with the same name (case-insensitive)
+- ✅ `generate_optimized_schedule()` stores the Plan and returns a structured result
+- ✅ Schedule output includes AI-added tasks alongside user tasks
+- ✅ Budget constraint enforced even after agent adds multiple tasks
+- ✅ All three tool functions return error dicts (not exceptions) for unknown pet names
+
+**What Didn't Work Initially:**
 
 - ❌ Multi-pet schedules showed false conflicts because every pet started at minute 0
   - _Fix:_ Added `start_offset` to Plan class to stagger schedules
 - ❌ Greedy scheduler sometimes selected one long task, blocking multiple shorter ones
   - _Fix:_ Switched to 0/1 knapsack DP
-- ❌ No validation on input (invalid priority, negative duration)
-  - _Fix:_ Added `__post_init__` validation in Owner, Pet, Task
+- ❌ Duplicate check was case-sensitive; "Morning Walk" and "morning walk" were treated as different tasks
+  - _Fix:_ Lowercased both sides before comparing
 
 **Test Coverage Confidence: 5/5 stars**
 
-- High confidence in common cases (single pet, multiple pets, required tasks, species filtering)
-- Lower confidence in edge cases: Owner with 1 minute available and a 5-minute required task (plan should include it anyway)
+- High confidence in common cases: single pet, multiple pets, required tasks, species filtering, gap detection, duplicate prevention
+- Lower confidence in edge cases: owner with 1 minute available and a 5-minute required task; agent behavior if Claude calls a tool with a malformed input
 
-### AI Agent Testing (Manual)
+### AI Evaluation Harness (`eval_harness.py`)
 
-**What Worked:**
+A standalone script runs the agent's tool layer against eight predefined scenarios and prints a scored report — no API key required.
 
-- ✅ Agent successfully calls `get_pets_and_tasks()` and reads live state
-- ✅ `analyze_care_gaps()` correctly identifies covered and missing categories
-- ✅ `add_recommended_task()` mutates the session state; tasks appear immediately in the schedule
-- ✅ `generate_optimized_schedule()` produces plans that fit the budget
-- ✅ Agent stops after one iteration when analysis is complete
-- ✅ 🤖 badges correctly label AI-added tasks in the UI
+```
+Result: 8 / 8 checks passed  (100%)
+All checks passed.
+```
 
-**What Could Be Improved:**
-
-- ⚠️ No retry logic if Claude's tool calls fail (e.g. invalid pet_name)
-  - Current: Agent returns error in tool result; Claude should recognize and retry, but we haven't tested this thoroughly
-- ⚠️ No max-iteration guard; agent could loop indefinitely if Claude keeps calling tools
-  - Current: Relies on Claude's `end_turn` signal; works in practice but not hardened
-- ⚠️ Care gap analysis is keyword-based; could miss tasks with non-standard titles
-  - Example: A task titled "Fido's spa day" might not match grooming keywords; agent wouldn't recognize it as grooming
+Scenarios tested: dog with no tasks (all 5 gaps), cat with feeding only (4 gaps), dog with exercise and feeding (3 gaps), fully covered pet (0 gaps), tight budget compliance, duplicate prevention, error handling for unknown pets, and required flag propagation.
 
 **What I Learned:**
 
 1. Claude's tool use is surprisingly reliable; the agent rarely hallucinates or calls the wrong tool
 2. The system prompt's explicit workflow (4 steps) is crucial; without it, Claude sometimes skips steps
-3. Agentic workflows are easier to debug when each tool prints its result to the UI (transparency builds trust)
+3. Making intermediate steps observable — each tool call and result shown in the UI — makes the agent's reasoning transparent and easier to trust and debug
 
 ---
 
@@ -421,14 +430,16 @@ applied-ai-system-final/
 ├── reflection.md              # Detailed design & learning reflection
 ├── requirements.txt           # Python dependencies
 ├── pawpal_system.py          # Core scheduling system (Owner, Pet, Task, Scheduler, Plan)
-├── ai_advisor.py             # AI Care Agent with Claude tool use
-├── app.py                    # Streamlit UI with 6 integrated steps
+├── ai_advisor.py             # AI Care Agent with Claude tool use and on_step callback
+├── app.py                    # Streamlit UI with 6 integrated steps and live agent panel
+├── eval_harness.py           # Evaluation script — 8 scenarios, pass/fail report, no API key needed
 ├── main.py                   # Legacy entry point (for non-Streamlit use)
 ├── tests/
 │   ├── __init__.py
-│   └── test_pawpal.py        # 21 unit tests
+│   ├── test_pawpal.py        # 21 unit tests — core scheduling system
+│   └── test_ai_advisor.py   # 18 unit tests — AI agent tool layer
 ├── screenshots/              # Demo images
-├── assets/                   # App-related assets (new)
+├── assets/                   # App-related assets
 └── uml_final.png            # System architecture diagram
 ```
 
