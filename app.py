@@ -1,6 +1,9 @@
+import os
+from typing import Optional
 import streamlit as st
 from tabulate import tabulate
 from pawpal_system import Owner, Pet, Task, Scheduler
+from ai_advisor import PawPalAgent
 
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 
@@ -55,7 +58,7 @@ def _status_badge(status: str) -> str:
     return "✅ complete" if status == "complete" else "⏳ pending"
 
 
-def _render_plan(plan, allocated_minutes: int | None = None) -> None:
+def _render_plan(plan, allocated_minutes: Optional[int] = None) -> None:
     """Render a Plan's time slots and summary using Streamlit components."""
     budget = allocated_minutes if allocated_minutes is not None else plan.owner.available_minutes
 
@@ -215,6 +218,7 @@ else:
             )
             target_pet.add_task(task)
 
+    ai_titles = st.session_state.get("ai_added_task_titles", set())
     for pet in pets:
         if pet.tasks:
             icon = _SPECIES_EMOJI.get(pet.species, "🐾")
@@ -223,7 +227,7 @@ else:
             st.markdown(_colored_table([
                 {
                     "": _task_emoji(t.title),
-                    "title": t.title,
+                    "title": ("🤖 " if (pet.name, t.title) in ai_titles else "") + t.title,
                     "priority": _priority_badge(t.priority),
                     "duration": f"{t.duration_minutes} min",
                     "required": "🔒" if t.required else "",
@@ -249,7 +253,92 @@ else:
 st.divider()
 
 # ---------------------------------------------------------------------------
-# Step 4 — Generate schedule
+# Step 4 — AI Care Agent
+# ---------------------------------------------------------------------------
+st.subheader("🤖 AI Care Agent")
+st.markdown(
+    "Let Claude analyze your pets' schedules, fill care gaps, and build optimized plans — automatically. "
+    "Tasks added by the agent are marked with 🤖 in the task list above."
+)
+
+if "owner" not in st.session_state or not st.session_state.owner.pets:
+    st.info("Add at least one pet first.")
+elif not any(p.tasks for p in st.session_state.owner.pets):
+    st.info("Add tasks to at least one pet before running the AI agent.")
+elif not os.environ.get("ANTHROPIC_API_KEY"):
+    st.warning(
+        "Set the **ANTHROPIC_API_KEY** environment variable to enable the AI Care Agent.\n\n"
+        "Run: `export ANTHROPIC_API_KEY=sk-ant-...` then restart the app."
+    )
+else:
+    if st.button("🤖 Run AI Care Agent"):
+        with st.spinner("Claude is analyzing care gaps and optimizing your pets' schedules…"):
+            try:
+                agent = PawPalAgent(st.session_state.owner)
+                result = agent.run()
+
+                # Track AI-added task titles so the task list can badge them
+                ai_titles = {
+                    (item["pet"], item["title"]) for item in result["added_tasks"]
+                }
+                existing = st.session_state.get("ai_added_task_titles", set())
+                st.session_state.ai_added_task_titles = existing | ai_titles
+
+                # Build the schedule session state from AI-generated plans so
+                # the schedule section below renders the AI output automatically.
+                if result["plans"]:
+                    owner = st.session_state.owner
+                    pets_in_plan = [p for p in owner.pets if p.name in result["plans"]]
+                    total_tasks = sum(len(p.tasks) for p in pets_in_plan)
+                    all_plans, running_offset = [], 0
+                    for pet in pets_in_plan:
+                        plan = result["plans"][pet.name]
+                        plan.start_offset = running_offset
+                        allocated = int(
+                            owner.available_minutes * len(pet.tasks) / max(total_tasks, 1)
+                        )
+                        all_plans.append((plan, allocated))
+                        slots = plan.get_time_slots()
+                        if slots:
+                            running_offset = slots[-1][2] + owner.buffer_minutes
+                    conflicts = Scheduler.detect_conflicts(*[p for p, _ in all_plans])
+                    st.session_state.schedule = {
+                        "type": "all",
+                        "plans": all_plans,
+                        "conflicts": conflicts,
+                        "ai_generated": True,
+                    }
+
+                st.session_state.ai_result = result
+
+            except Exception as exc:
+                st.error(f"AI agent error: {exc}")
+
+    if "ai_result" in st.session_state:
+        result = st.session_state.ai_result
+        if result["added_tasks"]:
+            st.success(
+                f"✨ Agent added **{len(result['added_tasks'])} task(s)** to fill care gaps:"
+            )
+            for item in result["added_tasks"]:
+                badge = "🔒 " if item.get("required") else ""
+                st.markdown(
+                    f"- **{item['pet']}**: {badge}{item['title']} "
+                    f"({item['priority']} priority, {item['duration_minutes']} min)"
+                )
+        else:
+            st.info("No gaps found — your pets' schedules are already well-rounded!")
+
+        if result.get("summary"):
+            with st.expander("AI agent analysis"):
+                st.markdown(result["summary"])
+
+        st.caption("Scroll down to see the AI-generated schedule ↓")
+
+st.divider()
+
+# ---------------------------------------------------------------------------
+# Step 5 — Generate schedule
 # ---------------------------------------------------------------------------
 st.subheader("🗓️ Let's Build the Perfect Day!")
 
@@ -300,9 +389,11 @@ else:
                 plan = scheduler.generate_plan()
                 st.session_state.schedule = {"type": "single", "pet": pet, "plan": plan}
 
-        # Always render the saved schedule
+        # Always render the saved schedule (AI-generated or manual)
         if "schedule" in st.session_state:
             sched = st.session_state.schedule
+            if sched.get("ai_generated"):
+                st.info("🤖 This schedule was built by the AI Care Agent and includes AI-recommended tasks.")
             if sched["type"] == "all":
                 for plan, allocated in sched["plans"]:
                     st.markdown(f"### {_SPECIES_EMOJI.get(plan.pet.species, '🐾')} {plan.pet.name} ({plan.pet.species})")
@@ -326,7 +417,7 @@ else:
 st.divider()
 
 # ---------------------------------------------------------------------------
-# Step 5 — Mark tasks complete
+# Step 6 — Mark tasks complete
 # ---------------------------------------------------------------------------
 st.subheader("☑️ Done for the Day?")
 
