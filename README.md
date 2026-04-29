@@ -385,6 +385,7 @@ Scenarios tested: dog with no tasks (all 5 gaps), cat with feeding only (4 gaps)
 ```
 applied-ai-system-final/
 ├── README.md                  # This file
+├── model_card.md              # AI collaboration, biases, and testing results
 ├── reflection.md              # Detailed design & learning reflection
 ├── requirements.txt           # Python dependencies
 ├── pawpal_system.py          # Core scheduling system (Owner, Pet, Task, Scheduler, Plan)
