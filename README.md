@@ -75,6 +75,12 @@ python eval_harness.py
 
 ---
 
+## App Preview
+
+![PawPal+ App](assets/pawpal%20display.png)
+
+---
+
 ## Sample Interactions
 
 ### Example 1: AI Agent Fills Exercise & Enrichment Gaps
