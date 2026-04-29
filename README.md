@@ -450,3 +450,15 @@ MIT
 ---
 
 **Questions?** See `reflection.md` for deeper dives into design decisions, testing strategy, and AI integration learnings.
+
+---
+
+## Portfolio
+
+**GitHub:** https://github.com/FremahA/applied-ai-system-project
+
+**Loom walkthrough:** _(coming soon)_
+
+**Reflection**
+
+Throughout this project I used AI at every stage — brainstorming the class hierarchy during design, asking targeted questions to understand 0/1 knapsack DP, and pasting error messages when debugging the multi-pet conflict detection. The most helpful suggestion was structuring `generate_optimized_schedule` as a tool the agent calls itself rather than running the scheduler separately after the loop — that gave Claude visibility into the actual schedule output and made its summaries specific and grounded. The most flawed suggestion was adding a vector database for RAG retrieval; for a problem that only needed five keyword lookups, that was unnecessary complexity I rejected in favor of a simple dictionary. The main limitation of the system is that gap detection relies on keyword matching in task titles, so an unusually worded task like "Fido's spa day" would not register as grooming. Future improvements would include replacing keyword matching with an LLM-based classifier, building a joint multi-pet scheduler that interleaves tasks across pets rather than sequencing them, and displaying schedule times as real clock times rather than minute offsets. This project taught me that integrating AI well means making it act on real data and produce verifiable outputs — the agent doesn't suggest tasks, it adds them, and the eval harness doesn't describe tests, it runs them and scores them.
