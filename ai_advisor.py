@@ -114,6 +114,7 @@ Follow this exact workflow:
 Critical rules:
 - Only add tasks for categories genuinely missing from the current task list.
 - Mark feeding tasks as required=true; all others false unless clearly essential.
+- Assign priority by urgency: feeding and health = high, exercise = medium, grooming and enrichment = low.
 - Keep task titles specific and natural (e.g. "Morning walk" not "Exercise").
 - Act immediately — do not ask for confirmation before adding tasks.\
 """
